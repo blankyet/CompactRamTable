@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Table search</title>
+
+<style>
+:root {
+    --bg: #f5f5f5;
+    --card: #ffffff;
+    --text: #222;
+    --muted: #666;
+    --faint: #999;
+    --border: #ddd;
+    --soft: #eee;
+    --accent: #1a5fd0;
+    --accent-bg: #eef3ff;
+    --code-bg: #fafafa;
+    --err-bg: #fee;
+    --err-text: #900;
+    --k: #881391; --s: #0b7a2b; --n: #1a1aa6; --b: #b5460f;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14161a;
+        --card: #1d2026;
+        --text: #e6e6e6;
+        --muted: #a0a4ab;
+        --faint: #777c85;
+        --border: #333840;
+        --soft: #2a2e35;
+        --accent: #7aa7ff;
+        --accent-bg: #232a3a;
+        --code-bg: #181b20;
+        --err-bg: #3a1f1f;
+        --err-text: #ff9d9d;
+        --k: #d48bdb; --s: #7bd88f; --n: #8aa8ff; --b: #f0a070;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.container { max-width: 1400px; margin: 0 auto; }
+
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h1 { margin: 0 0 4px; font-size: 26px; }
+#tableInfo { color: var(--muted); font-size: 14px; }
+
+.search { display: flex; gap: 8px; margin: 18px 0 10px; }
+.search-wrap { position: relative; flex: 1; display: flex; }
+
+input, select {
+    padding: 10px 12px;
+    font-size: 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--text);
+}
+input { flex: 1; min-width: 0; }
+
+button {
+    padding: 10px 18px;
+    font-size: 16px;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+}
+button.secondary { background: var(--soft); color: var(--text); }
+button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+
+#status { margin: 10px 0; color: var(--muted); }
+
+#error {
+    display: none;
+    padding: 12px;
+    margin: 12px 0;
+    border-radius: 6px;
+    background: var(--err-bg);
+    color: var(--err-text);
+    white-space: pre-wrap;
+}
+
+/* ---------- hints ---------- */
+#hints {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    max-height: 280px; overflow: auto;
+}
+#hints[hidden] { display: none; }
+#hints .hint { padding: 6px 12px; cursor: pointer; display: flex; gap: 10px; font-size: 14px; }
+#hints .hint.active, #hints .hint:hover { background: var(--accent-bg); }
+#hints .hint-meta { margin-left: auto; color: var(--faint); font-size: 12px; }
+
+/* ---------- schema ---------- */
+#schema { margin: 6px 0 14px; }
+#schema summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.schema-table { border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.schema-table td, .schema-table th { padding: 3px 14px 3px 0; text-align: left; vertical-align: top; }
+.schema-table th { color: var(--faint); font-weight: 500; }
+.schema-name { cursor: pointer; font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--accent); }
+.schema-name:hover { text-decoration: underline; }
+.schema-nested .schema-name { padding-left: 16px; }
+.schema-flags { color: var(--faint); }
+
+/* ---------- results ---------- */
+#results { display: flex; flex-direction: column; gap: 10px; }
+
+.result {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+.result-header {
+    display: flex; justify-content: space-between; gap: 12px;
+    margin-bottom: 8px; color: var(--muted); font-size: 13px;
+}
+.result-key { font-family: monospace; overflow: hidden; text-overflow: ellipsis; }
+
+.result-main { display: flex; gap: 16px; }
+.result-image {
+    width: 110px; height: 150px; flex: 0 0 110px;
+    object-fit: cover; border-radius: 5px; background: var(--soft);
+}
+.result-content { min-width: 0; flex: 1; }
+.result-title { font-size: 21px; font-weight: 650; margin-bottom: 3px; overflow-wrap: anywhere; }
+.result-subtitle { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.badge {
+    display: inline-block; padding: 3px 7px; border-radius: 4px;
+    background: var(--soft); color: var(--muted); font-size: 12px;
+}
+
+.description { color: var(--text); opacity: .85; line-height: 1.45; margin: 8px 0 12px; overflow-wrap: anywhere; }
+
+.meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 6px 18px; color: var(--muted); font-size: 13px;
+}
+.meta-item { overflow-wrap: anywhere; }
+.meta-item strong { color: var(--text); font-weight: 600; }
+
+.longtexts { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.longtexts strong { color: var(--text); font-weight: 600; }
+
+.relations { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.relation-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 12px; }
+.relation-name { color: var(--faint); margin-right: 4px; }
+.chip {
+    font-size: 12px; color: var(--muted);
+    background: var(--soft); padding: 3px 7px; border-radius: 4px;
+    max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+details.full { margin-top: 12px; border-top: 1px solid var(--soft); padding-top: 8px; }
+details.full > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+.loading, .no-results { color: var(--muted); padding: 12px 0; }
+#more { margin: 14px auto 0; display: block; }
+#more[hidden] { display: none; }
+
+.expander { color: var(--accent); cursor: pointer; margin-left: 6px; font-size: 12px; user-select: none; }
+.expander:hover { text-decoration: underline; }
+
+/* ---------- JSON tree ---------- */
+.json-toolbar { display: flex; gap: 6px; margin: 8px 0; }
+.json-toolbar button { padding: 4px 10px; font-size: 12px; background: var(--soft); color: var(--text); }
+
+.json-tree {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.55;
+    background: var(--code-bg);
+    border: 1px solid var(--soft);
+    border-radius: 6px;
+    padding: 8px 10px; max-height: 620px; overflow: auto;
+}
+.jhead { white-space: nowrap; }
+.jnode.container > .jhead { cursor: pointer; border-radius: 3px; }
+.jnode.container > .jhead:hover { background: var(--accent-bg); }
+.jtoggle { display: inline-block; width: 14px; color: var(--faint); font-size: 10px; user-select: none; transition: transform .1s; }
+.jnode.open > .jhead > .jtoggle { transform: rotate(90deg); }
+.jleaf { padding-left: 14px; }
+.jbody { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
+.jnode:not(.open) > .jbody, .jnode:not(.open) > .jclose { display: none; }
+.jnode.open > .jhead > .jsummary, .jnode.open > .jhead > .jclosed { display: none; }
+.jclose { padding-left: 14px; color: var(--muted); }
+.jkey { color: var(--k); }
+.jstr { color: var(--s); white-space: pre-wrap; word-break: break-word; }
+.jnum { color: var(--n); }
+.jbool { color: var(--b); }
+.jnull { color: var(--faint); }
+.jpunct { color: var(--muted); }
+.jsummary { color: var(--faint); font-style: italic; margin-left: 6px; }
+.jmore { color: var(--accent); cursor: pointer; margin-left: 6px; font-size: 11.5px; user-select: none; }
+.jmore:hover { text-decoration: underline; }
+
+@media (max-width: 600px) {
+    body { padding: 12px; }
+    .result-main { flex-direction: column; }
+    .result-image { width: 90px; height: 120px; }
+    .meta { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+    <header>
+        <h1 id="pageTitle">Search</h1>
+        <div id="tableInfo"></div>
+    </header>
+
+    <div class="search">
+        <div class="search-wrap">
+            <input id="search" type="text" autocomplete="off" placeholder="Loading schema…">
+            <div id="hints" hidden></div>
+        </div>
+        <select id="depth" title="How deep to load linked tables">
+            <option value="0">depth 0</option>
+            <option value="1" selected>depth 1</option>
+            <option value="2">depth 2</option>
+        </select>
+        <button id="searchButton">Search</button>
+    </div>
+
+    <details id="schema">
+        <summary>Schema (click a field to add it to the query)</summary>
+        <div id="schemaBody"></div>
+    </details>
+
+    <div id="status"></div>
+    <div id="error"></div>
+
+    <div id="results"></div>
+    <button id="more" class="secondary" hidden>Show more</button>
+</div>
+
+<script>
+// =====================================================
+// Everything below is driven by /api/defs. Nothing here
+// knows about any particular table.
+// =====================================================
+
+const $ = id => document.getElementById(id);
+
+function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+}
+const span = (className, text) => el("span", className, text);
+
+const statusElement = $("status");
+const errorElement = $("error");
+const searchInput = $("search");
+const searchButton = $("searchButton");
+const depthSelect = $("depth");
+const resultsElement = $("results");
+const hintsBox = $("hints");
+const moreButton = $("more");
+
+const NUMERIC = ["int32", "int64", "uint32", "uint64", "float", "double"];
+const PAGE = 20;
+
+let defs = { fields: [], hints: [], display: {} };
+let fieldByName = new Map();
+let searchTimer = null;
+let state = { query: "", limit: PAGE };
+
+
+// ---------- schema ----------
+
+async function loadDefs() {
+    try {
+        const response = await fetch("api/defs");
+        if (!response.ok) throw new Error("defs request failed");
+
+        defs = await response.json();
+        defs.fields = defs.fields || [];
+        defs.hints = defs.hints || [];
+        defs.display = defs.display || {};
+
+        fieldByName = new Map();
+        for (const field of defs.fields) {
+            fieldByName.set(field.name, field);
+            for (const nested of field.nested || []) {
+                fieldByName.set(nested.name, nested);
+            }
+        }
+
+        $("pageTitle").textContent = defs.title || defs.name || "Search";
+        document.title = defs.title || defs.name || "Search";
+        $("tableInfo").textContent =
+            `${defs.name} · ${(defs.element_count || 0).toLocaleString()} rows`;
+
+        searchInput.placeholder = buildPlaceholder();
+        renderSchema();
+    } catch (error) {
+        searchInput.placeholder = "Search…";
+        console.error("defs load failed", error);
+    }
+}
+
+
+function buildPlaceholder() {
+    const parts = [];
+    const fields = defs.fields;
+
+    const text = fields.find(f => f.searchable && f.type === "string");
+    if (text) parts.push(`${text.name}=…`);
+
+    const isNum = f => NUMERIC.includes(f.type) && !f.is_list && !(f.enums && f.enums.length);
+    const num = fields.find(f => f.searchable && isNum(f)) || fields.find(isNum);
+    if (num) parts.push(`${num.name}>=0`);
+
+    const en = fields.find(f => f.enums && f.enums.length);
+    if (en) parts.push(`${en.name}=${en.enums[0]}`);
+
+    return parts.join("  ") || "Search…";
+}
+
+
+function renderSchema() {
+    const body = $("schemaBody");
+    body.replaceChildren();
+
+    const table = el("table", "schema-table");
+    const head = el("tr");
+    for (const h of ["field", "type", ""]) head.appendChild(el("th", "", h));
+    table.appendChild(head);
+
+    const addRow = (field, nested) => {
+        const tr = el("tr", nested ? "schema-nested" : "");
+
+        const name = el("td");
+        const link = span("schema-name", field.name);
+        link.addEventListener("click", () => {
+            const prefix = searchInput.value && !searchInput.value.endsWith(" ") ? " " : "";
+            const hasNested = !nested && field.nested && field.nested.length;
+            searchInput.value += prefix + field.name + (hasNested ? "." : "=");
+            searchInput.focus();
+            updateHints();
+        });
+        name.appendChild(link);
+
+        let type = field.type;
+        if (field.external) type = `→ ${field.external}`;
+        if (field.enums && field.enums.length) type += ` (${field.enums.length} values)`;
+
+        const flags = [];
+        if (field.searchable) flags.push("searchable");
+        if (field.is_list) flags.push("list");
+
+        tr.appendChild(name);
+        tr.appendChild(el("td", "", type));
+        tr.appendChild(el("td", "schema-flags", flags.join(", ")));
+        table.appendChild(tr);
+    };
+
+    for (const field of defs.fields) {
+        addRow(field, false);
+        for (const nested of field.nested || []) addRow(nested, true);
+    }
+
+    body.appendChild(table);
+}
+
+
+// =====================================================
+// Autocomplete
+// =====================================================
+
+const OP_RE = /^([A-Za-z_][\w.]*)(!=|>=|<=|=|:|>|<)(.*)$/;
+let hintMatches = [];
+let hintActive = -1;
+
+
+function currentToken() {
+    const pos = searchInput.selectionStart;
+    const before = searchInput.value.slice(0, pos);
+    const token = before.match(/(\S*)$/)[1];
+    return { token, start: pos - token.length, end: pos };
+}
+
+
+function computeHints(token) {
+    if (!token) return [];
+
+    const lower = token.toLowerCase();
+    const out = [];
+
+    // field<op>partialValue -> enum values of that field
+    const op = token.match(OP_RE);
+    if (op) {
+        const [, name, operator, partial] = op;
+        const field = fieldByName.get(name);
+
+        if (field && field.enums) {
+            const p = partial.toLowerCase();
+            for (const e of field.enums) {
+                const el = e.toLowerCase();
+                if (el.startsWith(p) && el !== p) {
+                    out.push({ label: e, insert: name + operator + e, meta: name });
+                }
+            }
+        }
+        return out.slice(0, 10);
+    }
+
+    // relation.field -> nested fields
+    const relation = token.match(/^([A-Za-z_]\w*)\.([\w]*)$/);
+    if (relation) {
+        const parent = fieldByName.get(relation[1]);
+        for (const nested of parent?.nested || []) {
+            if (nested.name.toLowerCase().startsWith(lower)) {
+                out.push({ label: nested.name, insert: nested.name + "=", meta: nested.type });
+            }
+        }
+        return out.slice(0, 10);
+    }
+
+    // field names
+    for (const field of defs.fields.flatMap(f => [f, ...(f.nested || [])])) {
+        const fl = field.name.toLowerCase();
+        if (fl.startsWith(lower) && fl !== lower) {
+            const isRelation = field.nested && field.nested.length;
+            out.push({
+                label: field.name,
+                insert: field.name + (isRelation ? "." : "="),
+                meta: isRelation ? "relation" : field.type,
+            });
+        }
+    }
+
+    // bare enum value -> field=VALUE
+    for (const hint of defs.hints) {
+        if (hint.kind !== "enum") continue;
+        const hl = hint.text.toLowerCase();
+        if (hl.startsWith(lower) && hl !== lower) {
+            out.push({ label: hint.text, insert: hint.field + "=" + hint.text, meta: hint.field });
+        }
+    }
+
+    return out.slice(0, 10);
+}
+
+
+function renderHints() {
+    hintsBox.replaceChildren();
+    hintsBox.hidden = hintMatches.length === 0;
+
+    hintMatches.forEach((hint, i) => {
+        const row = el("div", "hint" + (i === hintActive ? " active" : ""));
+        row.appendChild(span("", hint.label));
+        row.appendChild(span("hint-meta", hint.meta));
+        row.addEventListener("mousedown", event => {
+            event.preventDefault();
+            applyHint(hint);
+        });
+        hintsBox.appendChild(row);
+    });
+}
+
+
+function updateHints() {
+    hintMatches = computeHints(currentToken().token);
+    hintActive = hintMatches.length ? 0 : -1;
+    renderHints();
+}
+
+
+function closeHints() {
+    hintMatches = [];
+    hintActive = -1;
+    renderHints();
+}
+
+
+function applyHint(hint) {
+    const { start, end } = currentToken();
+    const value = searchInput.value;
+
+    searchInput.value = value.slice(0, start) + hint.insert + value.slice(end);
+
+    const caret = start + hint.insert.length;
+    searchInput.setSelectionRange(caret, caret);
+    searchInput.focus();
+
+    updateHints();
+}
+
+
+searchInput.addEventListener("blur", closeHints);
+
+searchInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+        clearTimeout(searchTimer);
+        closeHints();
+        doSearch(true);
+        return;
+    }
+
+    if (!hintMatches.length) return;
+
+    if (event.key === "ArrowDown") {
+        hintActive = (hintActive + 1) % hintMatches.length;
+        renderHints();
+        event.preventDefault();
+    } else if (event.key === "ArrowUp") {
+        hintActive = (hintActive - 1 + hintMatches.length) % hintMatches.length;
+        renderHints();
+        event.preventDefault();
+    } else if (event.key === "Tab") {
+        applyHint(hintMatches[hintActive]);
+        event.preventDefault();
+    } else if (event.key === "Escape") {
+        closeHints();
+    }
+});
+
+searchInput.addEventListener("input", () => {
+    updateHints();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => doSearch(true), 800);
+});
+
+searchButton.addEventListener("click", () => doSearch(true));
+depthSelect.addEventListener("change", () => doSearch(false));
+moreButton.addEventListener("click", () => {
+    state.limit += PAGE;
+    doSearch(false);
+});
+
+
+// =====================================================
+// Search
+// =====================================================
+
+async function doSearch(reset) {
+    const query = searchInput.value.trim();
+
+    if (!query) {
+        resultsElement.innerHTML = "";
+        statusElement.textContent = "";
+        moreButton.hidden = true;
+        clearError();
+        return;
+    }
+
+    if (reset || query !== state.query) {
+        state.limit = PAGE;
+    }
+    state.query = query;
+
+    clearError();
+
+    try {
+        const response = await fetch(
+            `api/search?q=${encodeURIComponent(query)}` +
+            `&limit=${state.limit}&depth=${depthSelect.value}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "Search failed");
+        }
+
+        renderResults(data);
+    } catch (error) {
+        showError(error);
+        resultsElement.innerHTML = "";
+        moreButton.hidden = true;
+    }
+}
+
+
+function showError(error) {
+    console.error(error);
+    errorElement.style.display = "block";
+    errorElement.textContent = error instanceof Error ? error.message : String(error);
+}
+
+
+function clearError() {
+    errorElement.style.display = "none";
+    errorElement.textContent = "";
+}
+
+
+// =====================================================
+// Formatting (by schema type; "format" can be set server-side)
+// =====================================================
+
+function isBlank(value) {
+    return value === null || value === undefined || value === "";
+}
+
+
+function humanize(name) {
+    return name.replaceAll("_", " ").replaceAll(".", " › ").replace(/^\w/, c => c.toUpperCase());
+}
+
+
+function guessFormat(field) {
+    if (field.format) return field.format;
+    if (!NUMERIC.includes(field.type)) return "";
+
+    const n = field.name.split(".").pop();
+
+    if (/duration/i.test(n)) return "duration";
+    if (/(^|_)(timestamp|created|updated|published|modified|date)(_at)?$/i.test(n)) return "datetime";
+    if (/(^|_)(id|uid|year)$/i.test(n)) return "raw";
+
+    return "number";
+}
+
+
+function formatDuration(seconds) {
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total <= 0) return null;
+
+    const minutes = Math.round(total / 60);
+    if (minutes < 60) return `${minutes} min`;
+
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+
+function formatBytes(value) {
+    let n = Number(value);
+    if (!Number.isFinite(n)) return value;
+
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+
+    return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
+
+
+// epoch seconds or milliseconds
+function formatDate(value, withTime) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === 0) return null;
+
+    const date = new Date(n < 1e11 ? n * 1000 : n);
+    if (Number.isNaN(date.getTime())) return null;
+
+    return withTime ? date.toLocaleString() : date.toLocaleDateString();
+}
+
+
+function formatValue(field, value) {
+    switch (guessFormat(field)) {
+        case "duration": return formatDuration(value) ?? value;
+        case "date": return formatDate(value, false) ?? value;
+        case "datetime": return formatDate(value, true) ?? value;
+        case "bytes": return formatBytes(value);
+        case "number":
+            return typeof value === "number" ? value.toLocaleString() : value;
+        default:
+            return value;
+    }
+}
+
+
+// enum ordinal -> name
+function displayEnum(field, value) {
+    if (field.enums && typeof value === "number" && field.enums[value] !== undefined) {
+        return field.enums[value];
+    }
+    return value;
+}
+
+
+function prune(value) {
+    if (Array.isArray(value)) {
+        const items = value.map(prune).filter(item => item !== undefined);
+        return items.length ? items : undefined;
+    }
+
+    if (value !== null && typeof value === "object") {
+        const result = {};
+        for (const [key, item] of Object.entries(value)) {
+            const cleaned = prune(item);
+            if (cleaned !== undefined) result[key] = cleaned;
+        }
+        return Object.keys(result).length ? result : undefined;
+    }
+
+    return isBlank(value) ? undefined : value;
+}
+
+
+// text with "more/less" toggle
+function expandable(text, limit) {
+    const wrap = span("");
+    text = String(text);
+
+    if (text.length <= limit) {
+        wrap.textContent = text;
+        return wrap;
+    }
+
+    const body = span("", "");
+    const toggle = span("expander", "");
+    let expanded = false;
+
+    const update = () => {
+        body.textContent = expanded ? text : text.slice(0, limit) + "…";
+        toggle.textContent = expanded ? "less" : `more (${text.length})`;
+    };
+
+    toggle.addEventListener("click", () => { expanded = !expanded; update(); });
+    update();
+
+    wrap.appendChild(body);
+    wrap.appendChild(toggle);
+    return wrap;
+}
+
+
+// label of a linked row (object returned at depth >= 1)
+function rowLabel(row, titleField) {
+    if (row === null || row === undefined) return "";
+    if (typeof row !== "object") return String(row);
+
+    if (titleField && !isBlank(row[titleField])) return String(row[titleField]);
+
+    for (const value of Object.values(row)) {
+        if (typeof value === "string" && value) return value;
+    }
+
+    return JSON.stringify(row).slice(0, 40);
+}
+
+
+function firstString(row, excluded) {
+    for (const [key, value] of Object.entries(row)) {
+        if (!excluded.has(key) && typeof value === "string" && value) return value;
+    }
+    return null;
+}
+
+
+function getImageUrl(row) {
+    const cfg = defs.display.image;
+    if (!cfg || !cfg.field) return null;
+
+    const pick = value => {
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                const p = pick(item);
+                if (p) return p;
+            }
+            return null;
+        }
+        if (value && typeof value === "object") {
+            return cfg.key ? (value[cfg.key] || null) : null;
+        }
+        return typeof value === "string" && value ? value : null;
+    };
+
+    const path = pick(row[cfg.field]);
+    return path ? (cfg.url_prefix || "") + path : null;
+}
+
+
+// =====================================================
+// JSON tree viewer
+//  - containers collapsed by default (root open)
+//  - children rendered lazily, long arrays in chunks
+//  - long strings truncated with "show all"
+// =====================================================
+
+const JSON_CHUNK = 100;
+const JSON_STR_LIMIT = 160;
+
+
+function isContainer(value) {
+    return value !== null && typeof value === "object";
+}
+
+
+function keyLabel(key, isIndex) {
+    const frag = document.createDocumentFragment();
+    frag.appendChild(isIndex ? span("jnum", String(key)) : span("jkey", JSON.stringify(String(key))));
+    frag.appendChild(span("jpunct", ": "));
+    return frag;
+}
+
+
+function summaryText(value, isArray) {
+    if (isArray) {
+        const n = value.length;
+        return `${n} item${n === 1 ? "" : "s"}`;
+    }
+
+    const keys = Object.keys(value);
+    return `${keys.length} key${keys.length === 1 ? "" : "s"}: ` +
+        keys.slice(0, 5).join(", ") + (keys.length > 5 ? ", …" : "");
+}
+
+
+function renderPrimitive(value) {
+    if (value === null) return span("jnull", "null");
+
+    switch (typeof value) {
+        case "string": {
+            const wrap = span("");
+
+            if (value.length <= JSON_STR_LIMIT) {
+                wrap.appendChild(span("jstr", JSON.stringify(value)));
+                return wrap;
+            }
+
+            const text = span("jstr", "");
+            const more = span("jmore", "");
+            let expanded = false;
+
+            const update = () => {
+                text.textContent = expanded
+                    ? JSON.stringify(value)
+                    : JSON.stringify(value.slice(0, JSON_STR_LIMIT)) + "…";
+                more.textContent = expanded ? "[less]" : `[show all ${value.length} chars]`;
+            };
+
+            more.addEventListener("click", event => {
+                event.stopPropagation();
+                expanded = !expanded;
+                update();
+            });
+
+            update();
+            wrap.appendChild(text);
+            wrap.appendChild(more);
+            return wrap;
+        }
+        case "number": return span("jnum", String(value));
+        case "boolean": return span("jbool", String(value));
+        default: return span("jstr", String(value));
+    }
+}
+
+
+function buildNode(value, key, isIndex, openByDefault) {
+    const node = el("div", "jnode");
+
+    // ---- leaf ----
+    if (!isContainer(value)) {
+        const line = el("div", "jhead jleaf");
+        if (key !== null) line.appendChild(keyLabel(key, isIndex));
+        line.appendChild(renderPrimitive(value));
+        node.appendChild(line);
+        return node;
+    }
+
+    const isArray = Array.isArray(value);
+    const entries = isArray ? value.map((item, i) => [i, item]) : Object.entries(value);
+    const open = isArray ? "[" : "{";
+    const close = isArray ? "]" : "}";
+
+    // ---- empty container ----
+    if (entries.length === 0) {
+        const line = el("div", "jhead jleaf");
+        if (key !== null) line.appendChild(keyLabel(key, isIndex));
+        line.appendChild(span("jpunct", open + close));
+        node.appendChild(line);
+        return node;
+    }
+
+    // ---- container ----
+    node.classList.add("container");
+
+    const head = el("div", "jhead");
+    head.appendChild(span("jtoggle", "▶"));
+    if (key !== null) head.appendChild(keyLabel(key, isIndex));
+    head.appendChild(span("jpunct", open));
+    head.appendChild(span("jsummary", summaryText(value, isArray)));
+    head.appendChild(span("jpunct jclosed", " " + close));
+
+    const body = el("div", "jbody");
+    const closing = el("div", "jclose", close);
+
+    node.appendChild(head);
+    node.appendChild(body);
+    node.appendChild(closing);
+
+    let rendered = 0;
+    let more = null;
+
+    const renderChunk = () => {
+        if (more) { more.remove(); more = null; }
+
+        const end = Math.min(rendered + JSON_CHUNK, entries.length);
+
+        for (; rendered < end; rendered++) {
+            const [k, v] = entries[rendered];
+            body.appendChild(buildNode(v, k, isArray, false));
+        }
+
+        if (rendered < entries.length) {
+            const left = entries.length - rendered;
+            more = span("jmore", `… show next ${Math.min(JSON_CHUNK, left)} (${left} more)`);
+            more.addEventListener("click", event => {
+                event.stopPropagation();
+                renderChunk();
+            });
+            body.appendChild(more);
+        }
+    };
+
+    node._renderAll = () => { while (rendered < entries.length) renderChunk(); };
+
+    node._set = expanded => {
+        if (expanded && rendered === 0) renderChunk();
+        node.classList.toggle("open", expanded);
+    };
+
+    head.addEventListener("click", () => node._set(!node.classList.contains("open")));
+
+    if (openByDefault) node._set(true);
+
+    return node;
+}
+
+
+function walk(rootNode, fn) {
+    const stack = [rootNode];
+    while (stack.length) {
+        const node = stack.pop();
+        fn(node);
+        for (const child of node.querySelectorAll(":scope > .jbody > .jnode")) stack.push(child);
+    }
+}
+
+
+function buildJsonViewer(data) {
+    const wrap = el("div");
+    const toolbar = el("div", "json-toolbar");
+    const tree = el("div", "json-tree");
+    const rootNode = buildNode(data, null, false, true);
+
+    tree.appendChild(rootNode);
+
+    const makeButton = (label, handler) => {
+        const button = el("button", "", label);
+        button.type = "button";
+        button.addEventListener("click", handler);
+        toolbar.appendChild(button);
+        return button;
+    };
+
+    makeButton("Expand all", () => walk(rootNode, n => {
+        if (n._set) { n._renderAll(); n._set(true); }
+    }));
+
+    makeButton("Collapse all", () => walk(rootNode, n => {
+        if (n._set && n !== rootNode) n._set(false);
+    }));
+
+    const copyButton = makeButton("Copy JSON", async () => {
+        try {
+            await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+            copyButton.textContent = "Copied";
+        } catch (error) {
+            copyButton.textContent = "Copy failed";
+        }
+        setTimeout(() => { copyButton.textContent = "Copy JSON"; }, 1200);
+    });
+
+    wrap.appendChild(toolbar);
+    wrap.appendChild(tree);
+    return wrap;
+}
+
+
+// =====================================================
+// Result card
+// =====================================================
+
+function renderRelation(container, field, value) {
+    const items = Array.isArray(value) ? value : [value];
+    if (!items.length) return;
+
+    const row = el("div", "relation-row");
+    row.appendChild(span("relation-name", humanize(field.name) + ":"));
+
+    const objects = items.filter(item => item !== null && typeof item === "object");
+
+    // depth 0: only keys/refs came back, show a count
+    if (!objects.length) {
+        row.appendChild(span("chip", `${items.length} ref${items.length === 1 ? "" : "s"}`));
+        container.appendChild(row);
+        return;
+    }
+
+    const LIMIT = 12;
+
+    for (const item of objects.slice(0, LIMIT)) {
+        const label = rowLabel(item, field.ext_title);
+        if (!label) continue;
+
+        const chip = span("chip", label);
+        chip.title = label;
+        row.appendChild(chip);
+    }
+
+    if (objects.length > LIMIT) {
+        row.appendChild(span("chip", `+${objects.length - LIMIT} more`));
+    }
+
+    container.appendChild(row);
+}
+
+
+function renderResult(row, index, key) {
+    const element = el("div", "result");
+    const display = defs.display;
+
+    // header
+    const header = el("div", "result-header");
+    header.appendChild(el("strong", "", `#${index + 1}`));
+    header.appendChild(el("span", "result-key", `key: ${key ?? "?"}`));
+    element.appendChild(header);
+
+    const main = el("div", "result-main");
+
+    // image (optional, configured server-side)
+    const imageUrl = getImageUrl(row);
+    if (imageUrl) {
+        const image = el("img", "result-image");
+        image.src = imageUrl;
+        image.alt = "";
+        image.loading = "lazy";
+        image.onerror = () => { image.style.display = "none"; };
+        main.appendChild(image);
+    }
+
+    const content = el("div", "result-content");
+
+    // title / subtitle: configured field, else first non-empty string
+    const reserved = new Set(
+        [display.title, display.subtitle, display.description, display.image?.field].filter(Boolean)
+    );
+
+    let titleText = display.title ? row[display.title] : null;
+    if (isBlank(titleText)) titleText = firstString(row, new Set()) || key || "(no title)";
+
+    content.appendChild(el("div", "result-title", String(titleText)));
+
+    const subtitle = display.subtitle ? row[display.subtitle] : null;
+    if (!isBlank(subtitle) && String(subtitle) !== String(titleText)) {
+        content.appendChild(el("div", "result-subtitle", String(subtitle)));
+    }
+
+    const badges = el("div", "badges");
+    const meta = el("div", "meta");
+    const longTexts = el("div", "longtexts");
+    const relations = el("div", "relations");
+
+    const description = display.description ? row[display.description] : null;
+
+    for (const field of defs.fields) {
+        if (reserved.has(field.name)) continue;
+
+        const value = row[field.name];
+        if (isBlank(value)) continue;
+
+        // relations: list / external
+        if (field.is_list || field.external || Array.isArray(value) || (typeof value === "object")) {
+            renderRelation(relations, field, value);
+            continue;
+        }
+
+        // enums -> badges
+        if (field.enums && field.enums.length) {
+            const shown = displayEnum(field, value);
+            if (!isBlank(shown)) badges.appendChild(el("span", "badge", String(shown)));
+            continue;
+        }
+
+        if (typeof value === "boolean") {
+            if (value) badges.appendChild(el("span", "badge", humanize(field.name)));
+            continue;
+        }
+
+        // long strings go below the grid
+        if (typeof value === "string" && value.length > 200) {
+            const line = el("div");
+            line.appendChild(el("strong", "", humanize(field.name) + ": "));
+            line.appendChild(expandable(value, 300));
+            longTexts.appendChild(line);
+            continue;
+        }
+
+        const formatted = formatValue(field, value);
+        if (isBlank(formatted)) continue;
+
+        const item = el("div", "meta-item");
+        item.appendChild(el("strong", "", humanize(field.name) + ": "));
+        item.appendChild(document.createTextNode(String(formatted)));
+        meta.appendChild(item);
+    }
+
+    if (badges.children.length) content.appendChild(badges);
+
+    if (!isBlank(description)) {
+        const text = el("div", "description");
+        text.appendChild(expandable(description, 500));
+        content.appendChild(text);
+    }
+
+    if (meta.children.length) content.appendChild(meta);
+    if (longTexts.children.length) content.appendChild(longTexts);
+    if (relations.children.length) content.appendChild(relations);
+
+    main.appendChild(content);
+    element.appendChild(main);
+
+    // full data: JSON tree built on first open
+    const details = el("details", "full");
+    details.appendChild(el("summary", "", "Full data"));
+
+    let built = false;
+    details.addEventListener("toggle", () => {
+        if (!details.open || built) return;
+        built = true;
+        details.appendChild(buildJsonViewer(prune(row) ?? {}));
+    });
+
+    element.appendChild(details);
+    return element;
+}
+
+
+function isEmptyRow(row) {
+    if (row === null || row === undefined || typeof row !== "object") return true;
+
+    return !Object.values(row).some(value =>
+        !isBlank(value) && !(Array.isArray(value) && value.length === 0)
+    );
+}
+
+
+function renderResults(result) {
+    resultsElement.innerHTML = "";
+
+    const results = result.results || [];
+    const keys = result.keys || [];
+    let shown = 0;
+
+    for (let i = 0; i < results.length; i++) {
+        if (isEmptyRow(results[i])) continue;
+        resultsElement.appendChild(renderResult(results[i], shown, keys[i]));
+        shown++;
+    }
+
+    statusElement.textContent = `Found ${shown} result(s)`;
+
+    if (shown === 0) {
+        resultsElement.innerHTML = '<div class="no-results">No results</div>';
+    }
+
+    // server returned a full page -> there may be more
+    moreButton.hidden = results.length < state.limit;
+}
+
+
+loadDefs();
+</script>
+</body>
+</html>
